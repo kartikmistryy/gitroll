@@ -1,0 +1,54 @@
+{
+  "name": "linkedin-network-analysis",
+  "version": "1.0.0",
+  "description": "AI-powered LinkedIn network analysis dashboard for intelligent professional networking",
+  "private": true,
+  "keywords": [
+    "linkedin",
+    "networking",
+    "ai",
+    "machine-learning",
+    "nextjs",
+    "typescript",
+    "azure-openai",
+    "embeddings",
+    "vector-search"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "scripts": {
+    "dev": "next dev --turbopack",
+    "build": "next build --turbopack",
+    "start": "next start",
+    "lint": "eslint . --ext .ts,.tsx",
+    "lint:fix": "eslint . --ext .ts,.tsx --fix",
+    "type-check": "tsc --noEmit",
+    "clean": "rm -rf .next out dist",
+    "preview": "next build && next start"
+  },
+  "dependencies": {
+    "@clerk/nextjs": "^6.31.9",
+    "@types/papaparse": "^5.3.16",
+    "axios": "^1.11.0",
+    "framer-motion": "^12.23.12",
+    "mongodb": "^6.19.0",
+    "mongoose": "^8.18.0",
+    "next": "15.5.2",
+    "openai": "^5.19.1",
+    "papaparse": "^5.5.3",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "react-icons": "^5.5.0"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3",
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "15.5.2",
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  }
+}

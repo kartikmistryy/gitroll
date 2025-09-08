@@ -1,0 +1,78 @@
+@import "tailwindcss";
+
+@font-face {
+  font-family: 'sfRegular';
+  src: url('/sfRegular.otf');
+}
+
+@font-face {
+  font-family: 'sfMedium';
+  src: url('/sfMedium.otf');
+}
+
+@font-face {
+  font-family: 'sfBold';
+  src: url('/sfBold.otf');
+}
+
+.sf-regular {
+  font-family: 'sfRegular';
+  font-weight: 400;
+}
+
+.sf-medium {
+  font-family: 'sfMedium';
+  font-weight: 500;
+}
+
+.sf-bold {
+  font-family: 'sfBold';
+  font-weight: 600;
+}
+
+.logo {
+  font-family: 'Times New Roman', Times, serif;
+}
+
+@keyframes marquee {
+  0% {
+    transform: translateX(0%);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+@keyframes marquee-left {
+  0% {
+    transform: translateX(0%);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+@keyframes marquee-right {
+  0% {
+    transform: translateX(-50%);
+  }
+  100% {
+    transform: translateX(0%);
+  }
+}
+
+.animate-marquee {
+  animation: marquee 20s linear infinite;
+}
+
+.animate-marquee-left {
+  animation: marquee-left 25s linear infinite;
+}
+
+.animate-marquee-right {
+  animation: marquee-right 25s linear infinite;
+}
+
+* {
+  font-family: 'sfRegular', sans-serif; 
+}

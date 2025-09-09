@@ -70,6 +70,33 @@ export default function Dashboard() {
   // Refs
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Lock body scroll when mobile menu is open
+  useEffect(() => {
+    const handleScrollLock = () => {
+      // Only lock scroll on mobile devices (when sidebar is an overlay)
+      const isMobile = window.innerWidth < 768; // md breakpoint
+      
+      if (sidebarOpen && isMobile) {
+        // Lock scroll on mobile when sidebar is open
+        document.body.style.overflow = 'hidden';
+      } else {
+        // Restore scroll when sidebar is closed or on desktop
+        document.body.style.overflow = 'unset';
+      }
+    };
+
+    handleScrollLock();
+
+    // Listen for window resize to handle orientation changes
+    window.addEventListener('resize', handleScrollLock);
+
+    // Cleanup function to restore scroll when component unmounts
+    return () => {
+      document.body.style.overflow = 'unset';
+      window.removeEventListener('resize', handleScrollLock);
+    };
+  }, [sidebarOpen]);
+
   // Redirect unauthenticated users and load user data
   useEffect(() => {
     if (isLoaded && !user) {
@@ -498,7 +525,7 @@ export default function Dashboard() {
         </AnimatePresence>
 
         {/* Main Content */}
-        <div className="flex-1 ml-80">
+        <div className="flex-1 md:ml-80">
           <div className="max-w-4xl mx-auto p-5">
             {/* Welcome Section */}
             <div className="mb-8 mt-5">
@@ -553,7 +580,7 @@ export default function Dashboard() {
                   <div className="space-y-4">
                     {matches.map((match) => (
                       <div key={match.id} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
-                        <div className="flex items-start space-x-4">
+                        <div className="flex md:flex-row flex-col md:gap-3 gap-5 items-start space-x-4">
                           {/* Profile Picture */}
                           <div className="flex-shrink-0">
                             {match.profilePicture ? (

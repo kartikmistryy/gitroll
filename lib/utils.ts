@@ -256,6 +256,12 @@ export const convertRapidAPIProfile = (rapidApiData: Record<string, unknown>, ur
     experience: toString(rapidApiData.experience) || '',
     education: toString(rapidApiData.education) || '',
     skills: toStringArray(rapidApiData.skills),
-    profilePicture: toString(rapidApiData.profilePicture) || toString(rapidApiData.avatar) || toString(rapidApiData.image) || ''
+    profilePicture: toString(rapidApiData.profilePicture) || 
+                   toString(rapidApiData.avatar) || 
+                   toString(rapidApiData.image) || 
+                   toString(rapidApiData.profile_image) ||
+                   toString(rapidApiData.photo) ||
+                   toString(rapidApiData.picture) ||
+                   toString(rapidApiData.profile_picture) || ''
   };
 };

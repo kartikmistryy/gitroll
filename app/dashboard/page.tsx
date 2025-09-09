@@ -293,6 +293,7 @@ export default function Dashboard() {
           matchesResult.matches.map(async (match: Match) => {
             if (match.linkedinUrl) {
               try {
+                console.log(`Scraping profile for ${match.name}: ${match.linkedinUrl}`);
                 const scrapeResponse = await fetch('/api/scrape-profile', {
                   method: 'POST',
                   headers: {
@@ -303,9 +304,10 @@ export default function Dashboard() {
                 
                 const scrapeResult = await scrapeResponse.json();
                 if (scrapeResult.success && scrapeResult.profile) {
+                  console.log(`Successfully scraped ${match.name}, profile picture: ${scrapeResult.profile.profilePicture ? 'Found' : 'Not found'}`);
                   return {
                     ...match,
-                    profilePicture: scrapeResult.profile.profilePicture,
+                    profilePicture: scrapeResult.profile.profilePicture || `https://ui-avatars.com/api/?name=${encodeURIComponent(match.name)}&background=random&color=fff&size=200`,
                     email: scrapeResult.profile.email,
                     experience: scrapeResult.profile.experience,
                     education: scrapeResult.profile.education,
@@ -313,12 +315,19 @@ export default function Dashboard() {
                     title: scrapeResult.profile.title || match.title,
                     summary: scrapeResult.profile.summary || match.summary
                   };
+                } else {
+                  console.log(`Failed to scrape ${match.name}: ${scrapeResult.error || 'Unknown error'}`);
                 }
-              } catch {
-                // Continue with original profile data if scraping fails
+              } catch (error) {
+                console.log(`Error scraping ${match.name}:`, error);
               }
             }
-            return match;
+            
+            // Return match with fallback profile picture
+            return {
+              ...match,
+              profilePicture: match.profilePicture || `https://ui-avatars.com/api/?name=${encodeURIComponent(match.name)}&background=random&color=fff&size=200`
+            };
           })
         );
         

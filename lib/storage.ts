@@ -38,6 +38,8 @@ export const saveProfiles = async (profiles: Profile[]): Promise<void> => {
     const db = await getDatabase();
     const profilesCollection = db.collection<LinkedInProfile>('profiles');
     
+    console.log(`Saving ${profiles.length} profiles to database...`);
+    
     // Convert Profile to LinkedInProfile format and upsert
     for (const profile of profiles) {
       const linkedinProfile: LinkedInProfile = {
@@ -59,14 +61,21 @@ export const saveProfiles = async (profiles: Profile[]): Promise<void> => {
         uploadedAt: new Date()
       };
       
-      await profilesCollection.replaceOne(
+      const result = await profilesCollection.replaceOne(
         { id: profile.id },
         linkedinProfile,
         { upsert: true }
       );
+      
+      if (profile.embedding && profile.embedding.length > 0) {
+        console.log(`Saved profile ${profile.name} with embedding (${profile.embedding.length} dimensions)`);
+      }
     }
+    
+    console.log('All profiles saved successfully');
   } catch (error) {
     console.error('Error saving profiles to MongoDB:', error);
+    throw error;
   }
 };
 
@@ -122,6 +131,10 @@ export const getProfilesBySession = async (sessionId: string): Promise<Profile[]
     const db = await getDatabase();
     const profilesCollection = db.collection<LinkedInProfile>('profiles');
     const profiles = await profilesCollection.find({ uploadSessionId: sessionId }).toArray();
+    
+    console.log(`Loaded ${profiles.length} profiles for session ${sessionId}`);
+    const profilesWithEmbeddings = profiles.filter((p: LinkedInProfile) => p.embedding && p.embedding.length > 0);
+    console.log(`${profilesWithEmbeddings.length} profiles have embeddings`);
     
     // Convert LinkedInProfile to Profile format
     return profiles.map((profile: LinkedInProfile) => ({

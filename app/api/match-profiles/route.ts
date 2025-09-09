@@ -83,6 +83,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // Step 2: Generate embeddings for profiles that don't have them
     const profilesToProcess = profiles.filter(p => !p.embedding || p.embedding.length === 0);
     
+    console.log(`Total profiles loaded: ${profiles.length}`);
+    console.log(`Profiles with embeddings: ${profiles.filter(p => p.embedding && p.embedding.length > 0).length}`);
+    console.log(`Profiles needing embeddings: ${profilesToProcess.length}`);
+    
     if (profilesToProcess.length > 0) {
       console.log(`Processing embeddings for ${profilesToProcess.length} profiles...`);
       
@@ -122,7 +126,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       
       // Save profiles with their new embeddings back to storage
       await saveProfiles(profiles);
-      console.log('Embeddings saved to storage');
+      console.log(`Embeddings saved to storage for ${profilesToProcess.length} profiles`);
     }
 
     // Step 3: Find top matches using cosine similarity with minimum threshold

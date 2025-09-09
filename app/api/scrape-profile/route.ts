@@ -46,6 +46,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     // Convert to Profile object
     const profile = convertRapidAPIProfile(response.data, url);
+    
+    console.log(`Scraped profile for ${profile.name}:`);
+    console.log(`- Profile picture: ${profile.profilePicture ? 'Found' : 'Not found'}`);
+    console.log(`- Email: ${profile.email ? 'Found' : 'Not found'}`);
+    console.log(`- Skills: ${profile.skills?.length || 0} skills found`);
 
     // Store in MongoDB
     await addProfile(profile);

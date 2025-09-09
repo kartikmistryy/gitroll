@@ -529,7 +529,7 @@ export default function Dashboard() {
                             </div>
                             <p className="text-gray-600 text-sm">{match.title}</p>
                             <p className="text-gray-900 text-sm font-semibold">{match.company}</p>
-                            <p className="text-gray-500 text-xs mt-1">{match.location} • {match.industry}</p>
+                            <p className="text-gray-500 text-xs mt-1">{match.location}  {match.industry}</p>
                             
                             {/* Reasoning */}
                             {match.reasoning && (

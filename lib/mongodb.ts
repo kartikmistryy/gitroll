@@ -127,6 +127,7 @@ export interface LinkedInProfile {
   education?: string;
   skills?: string[];
   uploadSessionId?: string;
+  embedding?: number[];
   uploadedAt: Date;
 }
 

@@ -87,7 +87,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       console.log(`Processing embeddings for ${profilesToProcess.length} profiles...`);
       
       // Process embeddings in batches for better performance and reliability
-      const batchSize = 15; // Reduced batch size for better reliability
+      const batchSize = 10; // Smaller batch size for faster processing
       for (let i = 0; i < profilesToProcess.length; i += batchSize) {
         const batch = profilesToProcess.slice(i, i + batchSize);
         
@@ -102,7 +102,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
               input: profileTexts
             }),
             new Promise<never>((_, reject) => 
-              setTimeout(() => reject(new Error('Embedding API timeout')), 60000)
+              setTimeout(() => reject(new Error('Embedding API timeout')), 30000)
             )
           ]);
 

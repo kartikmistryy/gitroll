@@ -24,7 +24,7 @@ export const loadProfiles = async (): Promise<Profile[]> => {
       skills: profile.skills,
       profilePicture: profile.profilePicture,
       uploadSessionId: profile.uploadSessionId,
-      embedding: [] // Will be populated when needed
+      embedding: profile.embedding || [] // Preserve existing embeddings
     }));
   } catch (error) {
     console.error('Error loading profiles from MongoDB:', error);
@@ -55,6 +55,7 @@ export const saveProfiles = async (profiles: Profile[]): Promise<void> => {
         skills: profile.skills || [],
         profilePicture: profile.profilePicture || '',
         uploadSessionId: profile.uploadSessionId,
+        embedding: profile.embedding,
         uploadedAt: new Date()
       };
       
@@ -98,6 +99,7 @@ export const addProfiles = async (newProfiles: Profile[]): Promise<void> => {
       skills: profile.skills || [],
       profilePicture: profile.profilePicture || '',
       uploadSessionId: profile.uploadSessionId,
+      embedding: profile.embedding,
       uploadedAt: new Date()
     }));
     
@@ -137,7 +139,7 @@ export const getProfilesBySession = async (sessionId: string): Promise<Profile[]
       skills: profile.skills,
       profilePicture: profile.profilePicture,
       uploadSessionId: profile.uploadSessionId,
-      embedding: [] // Will be populated when needed
+      embedding: profile.embedding || [] // Preserve existing embeddings
     }));
   } catch (error) {
     console.error('Error loading profiles by session from MongoDB:', error);

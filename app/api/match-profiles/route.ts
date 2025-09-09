@@ -82,30 +82,32 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const profilesToProcess = profiles.filter(p => !p.embedding || p.embedding.length === 0);
     
     if (profilesToProcess.length > 0) {
+      console.log(`Processing embeddings for ${profilesToProcess.length} profiles...`);
       
-      // Process embeddings in batches of 10 for better performance
-      const batchSize = 10;
+      // Process embeddings in larger batches for better performance
+      const batchSize = 20; // Increased batch size
       for (let i = 0; i < profilesToProcess.length; i += batchSize) {
         const batch = profilesToProcess.slice(i, i + batchSize);
         
         try {
-          // Process batch in parallel
-          const batchPromises = batch.map(async (profile, batchIndex) => {
-            const profileText = generateProfileText(profile);
-            
-            const profileEmbeddingResponse = await openai.embeddings.create({
-              model: embeddingsDeployment,
-              input: profileText
-            });
+          // Generate all profile texts first
+          const profileTexts = batch.map(profile => generateProfileText(profile));
+          
+          // Single API call for the entire batch
+          const batchEmbeddingResponse = await openai.embeddings.create({
+            model: embeddingsDeployment,
+            input: profileTexts
+          });
 
-            profile.embedding = profileEmbeddingResponse.data[0].embedding;
-            return batchIndex;
+          // Assign embeddings back to profiles
+          batch.forEach((profile, index) => {
+            profile.embedding = batchEmbeddingResponse.data[index].embedding;
           });
           
-          await Promise.all(batchPromises);
+          console.log(`Processed batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(profilesToProcess.length / batchSize)}`);
           
-          
-        } catch {
+        } catch (error) {
+          console.error(`Failed to process batch starting at index ${i}:`, error);
           // Continue with next batch instead of failing completely
           continue;
         }
@@ -113,18 +115,74 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       
       // Save profiles with their new embeddings back to storage
       await saveProfiles(profiles);
+      console.log('Embeddings saved to storage');
     }
 
-    // Step 3: Find top matches using cosine similarity
-    const topMatches = findTopMatches(missionEmbedding, profiles, 5);
+    // Step 3: Find top matches using cosine similarity with minimum threshold
+    const finalMatches = findTopMatches(missionEmbedding, profiles, 5, 0.3); // 0.3 minimum similarity threshold
 
-    if (topMatches.length === 0) {
+    if (finalMatches.length === 0) {
       return NextResponse.json({
-        error: 'No suitable matches found'
+        error: 'No suitable matches found with sufficient similarity',
+        details: 'Try refining your mission statement or upload more diverse profiles'
       }, { status: 404 });
     }
 
-    // Step 4: Generate AI recommendations
+    // Step 4: Generate individual reasoning for each match
+    const matchReasons = await Promise.all(
+      finalMatches.map(async (match, index) => {
+        const reasonPrompt = `
+Mission: ${mission}
+
+Mission Attributes:
+- Industry: ${attributes.industry}
+- Location: ${attributes.location}
+- Role: ${attributes.role}
+- Description: ${attributes.description}
+
+Profile to analyze:
+- Name: ${match.name}
+- Title: ${match.title || 'Not specified'}
+- Company: ${match.company || 'Not specified'}
+- Location: ${match.location || 'Not specified'}
+- Industry: ${match.industry || 'Not specified'}
+- Summary: ${match.summary || 'Not specified'}
+- Similarity Score: ${(match.similarity * 100).toFixed(1)}%
+
+Please provide a concise explanation (2-3 sentences) of why this person is a good match for the mission. Focus on specific connections between their background and the mission requirements. Be precise and actionable.
+`;
+
+        try {
+          const reasonResponse = await openai.chat.completions.create({
+            model: gptDeployment,
+            messages: [
+              {
+                role: 'system',
+                content: 'You are a professional network analyst who provides precise, actionable explanations for why specific professionals are good matches for networking goals.'
+              },
+              {
+                role: 'user',
+                content: reasonPrompt
+              }
+            ],
+            temperature: 0.5,
+            max_tokens: 150
+          });
+
+          return {
+            ...match,
+            reasoning: reasonResponse.choices[0]?.message?.content || 'Good match based on profile analysis.'
+          };
+        } catch (error) {
+          return {
+            ...match,
+            reasoning: 'Good match based on profile analysis.'
+          };
+        }
+      })
+    );
+
+    // Step 5: Generate overall recommendations
     const recommendationsPrompt = `
 Mission: ${mission}
 
@@ -135,22 +193,22 @@ Mission Attributes:
 - Description: ${attributes.description}
 
 Top Matches:
-${topMatches.map((profile, index) => `
+${matchReasons.map((profile, index) => `
 ${index + 1}. ${profile.name}
    - Title: ${profile.title || 'Not specified'}
    - Company: ${profile.company || 'Not specified'}
    - Location: ${profile.location || 'Not specified'}
    - Industry: ${profile.industry || 'Not specified'}
    - Summary: ${profile.summary || 'Not specified'}
+   - Similarity: ${(profile.similarity * 100).toFixed(1)}%
 `).join('\n')}
 
-Please provide a natural language response that:
+Please provide a brief summary (2-3 sentences) that:
 1. Acknowledges the mission
-2. Explains why these people are good matches
-3. Provides specific recommendations for each person
-4. Suggests next steps
+2. Highlights the overall quality of matches found
+3. Suggests next steps for networking
 
-Keep the tone professional and helpful.
+Keep it concise and professional.
 `;
 
     const recommendationsResponse = await openai.chat.completions.create({
@@ -174,7 +232,7 @@ Keep the tone professional and helpful.
     return NextResponse.json({
       success: true,
       message: 'Matches found successfully',
-      matches: topMatches.map(match => ({
+      matches: matchReasons.map(match => ({
         id: match.id,
         name: match.name,
         title: match.title,
@@ -182,7 +240,9 @@ Keep the tone professional and helpful.
         location: match.location,
         industry: match.industry,
         linkedinUrl: match.linkedinUrl,
-        summary: match.summary
+        summary: match.summary,
+        similarity: match.similarity,
+        reasoning: match.reasoning
       })),
       recommendations,
       totalProfiles: profiles.length

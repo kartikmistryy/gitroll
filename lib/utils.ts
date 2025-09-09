@@ -59,6 +59,7 @@ export interface MatchResult {
   linkedinUrl?: string;
   summary?: string;
   similarity: number;
+  reasoning?: string;
 }
 
 /**
@@ -96,12 +97,14 @@ export const cosineSimilarity = (a: number[], b: number[]): number => {
  * @param missionEmbedding - Vector embedding of the mission statement
  * @param profiles - Array of profiles to search through
  * @param topN - Number of top matches to return
+ * @param minSimilarity - Minimum similarity threshold (0-1)
  * @returns Array of top matching profiles with similarity scores
  */
 export const findTopMatches = (
   missionEmbedding: number[], 
   profiles: Profile[], 
-  topN: number = 5
+  topN: number = 5,
+  minSimilarity: number = 0.0
 ): MatchResult[] => {
   const profilesWithSimilarity: ProfileWithEmbedding[] = [];
   const seenProfiles = new Set<string>(); // Track seen profiles to avoid duplicates
@@ -120,10 +123,14 @@ export const findTopMatches = (
       seenProfiles.add(profileKey);
       
       const similarity = cosineSimilarity(missionEmbedding, profile.embedding);
-      profilesWithSimilarity.push({
-        profile,
-        similarity
-      });
+      
+      // Only include profiles that meet the minimum similarity threshold
+      if (similarity >= minSimilarity) {
+        profilesWithSimilarity.push({
+          profile,
+          similarity
+        });
+      }
     }
   }
 

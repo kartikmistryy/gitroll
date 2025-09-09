@@ -36,6 +36,8 @@ interface Match {
   experience?: string;
   education?: string;
   skills?: string[];
+  similarity?: number;
+  reasoning?: string;
 }
 
 /**
@@ -287,7 +289,7 @@ export default function Dashboard() {
         setRecommendations(matchesResult.recommendations);
         setUploadStatus({ 
           type: 'success', 
-          message: `Found ${matchesResult.matches.length} matches` 
+          message: `Found ${matchesResult.matches.length} high-quality matches with detailed reasoning` 
         });
         
         // Save matches to MongoDB
@@ -467,7 +469,7 @@ export default function Dashboard() {
                     <>
                       <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
                       <span>Finding Matches...</span>
-                      <span className="text-xs opacity-75 ml-2">(Processing all profiles)</span>
+                      <span className="text-xs opacity-75 ml-2">(AI analyzing {totalProfiles} profiles)</span>
                     </>
                   ) : (
                     <>
@@ -510,9 +512,32 @@ export default function Dashboard() {
                           
                           {/* Profile Info */}
                           <div className="flex-1 min-w-0">
-                            <h4 className="font-semibold text-gray-900 text-lg">{match.name}</h4>
+                            <div className="flex items-center justify-between mb-2">
+                              <h4 className="font-semibold text-gray-900 text-lg">{match.name}</h4>
+                              {match.similarity && (
+                                <div className="flex items-center space-x-2">
+                                  <span className="text-xs text-gray-500">Match Score:</span>
+                                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                                    match.similarity >= 0.7 ? 'bg-green-100 text-green-800' :
+                                    match.similarity >= 0.5 ? 'bg-yellow-100 text-yellow-800' :
+                                    'bg-gray-100 text-gray-800'
+                                  }`}>
+                                    {(match.similarity * 100).toFixed(0)}%
+                                  </span>
+                                </div>
+                              )}
+                            </div>
                             <p className="text-gray-600 text-sm">{match.title}</p>
                             <p className="text-gray-900 text-sm font-semibold">{match.company}</p>
+                            <p className="text-gray-500 text-xs mt-1">{match.location} • {match.industry}</p>
+                            
+                            {/* Reasoning */}
+                            {match.reasoning && (
+                              <div className="mt-3 p-3 bg-blue-50 rounded-lg border-l-4 border-blue-400">
+                                <p className="text-sm text-blue-800 font-medium mb-1">Why this match:</p>
+                                <p className="text-sm text-blue-700">{match.reasoning}</p>
+                              </div>
+                            )}
                           </div>
                           
                           {/* Connect Button */}

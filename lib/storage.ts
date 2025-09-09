@@ -76,11 +76,37 @@ export const addProfile = async (profile: Profile): Promise<void> => {
   await saveProfiles(profiles);
 };
 
-// Add multiple profiles
+// Add multiple profiles efficiently (without loading all existing profiles)
 export const addProfiles = async (newProfiles: Profile[]): Promise<void> => {
-  const profiles = await loadProfiles();
-  profiles.push(...newProfiles);
-  await saveProfiles(profiles);
+  try {
+    const db = await getDatabase();
+    const profilesCollection = db.collection<LinkedInProfile>('profiles');
+    
+    // Convert Profile to LinkedInProfile format and insert directly
+    const linkedinProfiles: LinkedInProfile[] = newProfiles.map(profile => ({
+      id: profile.id,
+      name: profile.name,
+      title: profile.title || '',
+      company: profile.company || '',
+      location: profile.location || '',
+      industry: profile.industry || '',
+      linkedinUrl: profile.linkedinUrl || '',
+      email: profile.email || '',
+      summary: profile.summary || '',
+      experience: profile.experience || '',
+      education: profile.education || '',
+      skills: profile.skills || [],
+      profilePicture: profile.profilePicture || '',
+      uploadSessionId: profile.uploadSessionId,
+      uploadedAt: new Date()
+    }));
+    
+    // Insert all profiles in a single operation
+    await profilesCollection.insertMany(linkedinProfiles);
+  } catch (error) {
+    console.error('Error adding profiles to MongoDB:', error);
+    throw error;
+  }
 };
 
 // Get all profiles (async version)

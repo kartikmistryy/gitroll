@@ -22,6 +22,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       return NextResponse.json({ error: 'Mission statement is required' }, { status: 400 });
     }
 
+    // Validate Azure OpenAI configuration
+    if (!process.env.AZURE_OPENAI_API_KEY || !process.env.AZURE_OPENAI_ENDPOINT) {
+      return NextResponse.json({ 
+        error: 'Azure OpenAI configuration missing' 
+      }, { status: 500 });
+    }
+
     // Initialize Azure OpenAI client
     const openai = new OpenAI({
       apiKey: process.env.AZURE_OPENAI_API_KEY,

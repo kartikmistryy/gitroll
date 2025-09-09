@@ -1,8 +1,8 @@
 // Import persistent storage functions
-import { addProfile, addProfiles, getAllProfiles, clearProfiles, saveProfiles } from './storage';
+import { addProfile, addProfiles, getAllProfiles, clearProfiles, saveProfiles, getProfilesBySession, clearProfilesBySession } from './storage';
 
 // Re-export storage functions (now async)
-export { addProfile, addProfiles, getAllProfiles, clearProfiles, saveProfiles };
+export { addProfile, addProfiles, getAllProfiles, clearProfiles, saveProfiles, getProfilesBySession, clearProfilesBySession };
 
 /**
  * Profile Interface
@@ -23,6 +23,7 @@ export interface Profile {
   skills?: string[];
   profilePicture?: string;
   embedding?: number[]; // Vector embedding for similarity matching
+  uploadSessionId?: string; // Track which upload session this profile belongs to
 }
 
 /**
@@ -191,9 +192,10 @@ export const generateMissionText = (mission: string, attributes: MissionAttribut
  * Handles various LinkedIn export formats and field name variations
  * 
  * @param csvData - Raw CSV data from LinkedIn export
+ * @param sessionId - Upload session ID to track this batch
  * @returns Array of structured Profile objects
  */
-export const parseLinkedInCSV = (csvData: Record<string, string>[]): Profile[] => {
+export const parseLinkedInCSV = (csvData: Record<string, string>[], sessionId?: string): Profile[] => {
   return csvData.map((row, index) => {
     // Handle different possible field names from LinkedIn exports
     const firstName = row["First Name"] || row["first_name"] || row["First name"] || "";
@@ -217,7 +219,8 @@ export const parseLinkedInCSV = (csvData: Record<string, string>[]): Profile[] =
       summary: `${jobTitle} at ${company}`,
       experience: `${jobTitle} at ${company}`,
       education: "",
-      skills: []
+      skills: [],
+      uploadSessionId: sessionId
     };
   });
 };

@@ -23,6 +23,7 @@ export const loadProfiles = async (): Promise<Profile[]> => {
       education: profile.education,
       skills: profile.skills,
       profilePicture: profile.profilePicture,
+      uploadSessionId: profile.uploadSessionId,
       embedding: [] // Will be populated when needed
     }));
   } catch (error) {
@@ -53,6 +54,7 @@ export const saveProfiles = async (profiles: Profile[]): Promise<void> => {
         education: profile.education || '',
         skills: profile.skills || [],
         profilePicture: profile.profilePicture || '',
+        uploadSessionId: profile.uploadSessionId,
         uploadedAt: new Date()
       };
       
@@ -86,6 +88,37 @@ export const getAllProfiles = async (): Promise<Profile[]> => {
   return await loadProfiles();
 };
 
+// Get profiles by upload session
+export const getProfilesBySession = async (sessionId: string): Promise<Profile[]> => {
+  try {
+    const db = await getDatabase();
+    const profilesCollection = db.collection<LinkedInProfile>('profiles');
+    const profiles = await profilesCollection.find({ uploadSessionId: sessionId }).toArray();
+    
+    // Convert LinkedInProfile to Profile format
+    return profiles.map((profile: LinkedInProfile) => ({
+      id: profile.id,
+      name: profile.name,
+      title: profile.title,
+      company: profile.company,
+      location: profile.location,
+      industry: profile.industry,
+      linkedinUrl: profile.linkedinUrl,
+      email: profile.email,
+      summary: profile.summary,
+      experience: profile.experience,
+      education: profile.education,
+      skills: profile.skills,
+      profilePicture: profile.profilePicture,
+      uploadSessionId: profile.uploadSessionId,
+      embedding: [] // Will be populated when needed
+    }));
+  } catch (error) {
+    console.error('Error loading profiles by session from MongoDB:', error);
+    return [];
+  }
+};
+
 // Clear all profiles
 export const clearProfiles = async (): Promise<void> => {
   try {
@@ -94,5 +127,16 @@ export const clearProfiles = async (): Promise<void> => {
     await profilesCollection.deleteMany({});
   } catch (error) {
     console.error('Error clearing profiles from MongoDB:', error);
+  }
+};
+
+// Clear profiles by session
+export const clearProfilesBySession = async (sessionId: string): Promise<void> => {
+  try {
+    const db = await getDatabase();
+    const profilesCollection = db.collection<LinkedInProfile>('profiles');
+    await profilesCollection.deleteMany({ uploadSessionId: sessionId });
+  } catch (error) {
+    console.error('Error clearing profiles by session from MongoDB:', error);
   }
 };

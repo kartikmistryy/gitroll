@@ -50,16 +50,20 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       }, { status: 400 });
     }
 
-    // Convert raw CSV data to Profile objects
-    const profiles = parseLinkedInCSV(parseResult.data as Record<string, string>[]);
+    // Generate a unique session ID for this upload
+    const sessionId = `upload-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+    // Convert raw CSV data to Profile objects with session ID
+    const profiles = parseLinkedInCSV(parseResult.data as Record<string, string>[], sessionId);
 
     // Store profiles in persistent storage
     await addProfiles(profiles);
-
+    
     return NextResponse.json({
       success: true,
       message: `Successfully imported ${profiles.length} profiles`,
-      totalCount: profiles.length
+      totalCount: profiles.length,
+      sessionId: sessionId
     });
 
   } catch (err) {

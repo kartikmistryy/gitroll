@@ -51,8 +51,10 @@ const getClientPromise = (): Promise<MongoClient> => {
     return globalWithMongo._mongoClientPromise;
   } else {
     // In production mode, create a new connection for each request
-    // This is more reliable for serverless environments
-    client = createConnection();
+    // This is more reliable for serverless environments like Vercel
+    if (!client) {
+      client = createConnection();
+    }
     return client.connect();
   }
 };
@@ -68,8 +70,13 @@ export async function getDatabase(): Promise<Db> {
     const clientPromise = getClientPromise();
     const client = await clientPromise;
     
-    // Test the connection
-    await client.db('admin').command({ ping: 1 });
+    // Test the connection with a timeout
+    await Promise.race([
+      client.db('admin').command({ ping: 1 }),
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Connection timeout')), 10000)
+      )
+    ]);
     
     return client.db('linkedin_network_analysis');
   } catch (error) {
@@ -79,10 +86,12 @@ export async function getDatabase(): Promise<Db> {
     if (error instanceof Error) {
       if (error.message.includes('SSL') || error.message.includes('TLS')) {
         throw new Error('MongoDB SSL/TLS connection failed. Please check your connection string and network access settings.');
-      } else if (error.message.includes('timeout')) {
+      } else if (error.message.includes('timeout') || error.message.includes('Timeout')) {
         throw new Error('MongoDB connection timeout. Please check your network connection and MongoDB Atlas settings.');
       } else if (error.message.includes('authentication')) {
         throw new Error('MongoDB authentication failed. Please check your username and password.');
+      } else if (error.message.includes('ENOTFOUND') || error.message.includes('ECONNREFUSED')) {
+        throw new Error('MongoDB server not found. Please check your connection string and network access.');
       }
     }
     
@@ -117,6 +126,7 @@ export interface LinkedInProfile {
   experience?: string;
   education?: string;
   skills?: string[];
+  uploadSessionId?: string;
   uploadedAt: Date;
 }
 

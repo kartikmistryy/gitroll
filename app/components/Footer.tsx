@@ -52,7 +52,8 @@
 
 export const Footer = () => {
     return(
-        <footer className="w-full bg-black text-white flex md:flex-row flex-col items-start justify-start py-14 md:px-10 px-5">
+        <footer className="w-full bg-black h-full ">
+            <div className="w-full h-full text-white flex md:flex-row flex-col items-start py-14 md:px-10 px-5 justify-start max-w-[1400px] mx-auto">
             <div className="w-full h-full flex flex-col justify-between items-start md:basis-3/5 basis-full md:min-h-[200px] min-h-[80px]">
                 <span className="w-full h-full flex flex-row md:items-center items-center justify-start">
                     <h3 className="md:text-4xl text-xl font-black font-serif bg-white p-2 rounded-full md:h-16 h-10 md:w-16 w-10 flex items-center justify-center text-black logo">G</h3>
@@ -88,7 +89,8 @@ export const Footer = () => {
                         <li><a href="#" className="text-gray-400 hover:text-white transition-colors">Privacy Policy</a></li>
                         <li><a href="#" className="text-gray-400 hover:text-white transition-colors">Terms & Conditions</a></li>
                     </ul>
-                </span>
+            </span>
+            </div>
         </footer>
     )
 }

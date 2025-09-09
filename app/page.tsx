@@ -217,7 +217,7 @@ export default function Home() {
         ref={textSectionRef}
         className="w-full bg-black md:py-[200px] py-20"
       >
-        <div className="w-full h-full">
+        <div className="w-full h-full max-w-[1400px] mx-auto">
           <div className="w-full px-5 md:px-10">
             <StaggerText
               text="You already have hundreds of connections — but only a handful truly matter for your next big move. What if you could cut through the noise and instantly find the right partners, advisors, or clients who align with your mission? That's the power of combining your network with AI. In just a few simple steps, you can transform introductions into collaborations and contacts into growth."

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
 import { 
-  getAllProfiles, 
+  getProfilesBySession, 
   saveProfiles,
   findTopMatches, 
   generateProfileText, 
@@ -28,28 +28,30 @@ import {
  * @returns Top matches and intelligent recommendations
  */
 export async function POST(request: NextRequest): Promise<NextResponse> {
-  // Set a timeout for the entire operation (5 minutes for large datasets)
+  // Set a timeout for the entire operation (4 minutes for Vercel compatibility)
   const timeoutPromise = new Promise<never>((_, reject) => {
-    setTimeout(() => reject(new Error('Request timeout')), 300000);
+    setTimeout(() => reject(new Error('Request timeout')), 240000);
   });
 
   const processPromise = (async (): Promise<NextResponse> => {
     try {
-      const { mission, attributes } = await request.json();
+      const { mission, attributes, sessionId } = await request.json();
       
 
     // Validate required inputs
-    if (!mission || !attributes) {
+    if (!mission || !attributes || !sessionId) {
       return NextResponse.json({ 
-        error: 'Mission and attributes are required' 
+        error: 'Mission, attributes, and sessionId are required' 
       }, { status: 400 });
     }
 
-    // Check if profiles are available
-    const profiles = await getAllProfiles();
+    // Get profiles from the specific upload session
+    const profiles = await getProfilesBySession(sessionId);
+    console.log(`Processing ${profiles.length} profiles from session: ${sessionId}`);
+    
     if (profiles.length === 0) {
       return NextResponse.json({
-        error: 'No profiles available for matching'
+        error: 'No profiles found for this upload session'
       }, { status: 400 });
     }
     
@@ -84,8 +86,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     if (profilesToProcess.length > 0) {
       console.log(`Processing embeddings for ${profilesToProcess.length} profiles...`);
       
-      // Process embeddings in larger batches for better performance
-      const batchSize = 20; // Increased batch size
+      // Process embeddings in batches for better performance and reliability
+      const batchSize = 15; // Reduced batch size for better reliability
       for (let i = 0; i < profilesToProcess.length; i += batchSize) {
         const batch = profilesToProcess.slice(i, i + batchSize);
         
@@ -93,11 +95,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           // Generate all profile texts first
           const profileTexts = batch.map(profile => generateProfileText(profile));
           
-          // Single API call for the entire batch
-          const batchEmbeddingResponse = await openai.embeddings.create({
-            model: embeddingsDeployment,
-            input: profileTexts
-          });
+          // Single API call for the entire batch with timeout
+          const batchEmbeddingResponse = await Promise.race([
+            openai.embeddings.create({
+              model: embeddingsDeployment,
+              input: profileTexts
+            }),
+            new Promise<never>((_, reject) => 
+              setTimeout(() => reject(new Error('Embedding API timeout')), 60000)
+            )
+          ]);
 
           // Assign embeddings back to profiles
           batch.forEach((profile, index) => {

@@ -24,7 +24,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       }, { status: 500 });
     }
 
-    // Call RapidAPI
+    // Call RapidAPI with timeout
     const response = await axios.get(
       'https://li-data-scraper.p.rapidapi.com/get-profile-data-by-url',
       {
@@ -32,7 +32,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         headers: {
           'X-Rapidapi-Key': process.env.RAPIDAPI_KEY,
           'X-Rapidapi-Host': 'li-data-scraper.p.rapidapi.com'
-        }
+        },
+        timeout: 30000 // 30 second timeout
       }
     );
 

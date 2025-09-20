@@ -83,68 +83,96 @@ async function handlePost(request: NextRequest, user: AuthenticatedUser): Promis
     });
     const missionEmbedding = missionEmbeddingResponse.data[0].embedding;
 
-    // Step 2: Fast pre-filtering using text matching (no embeddings needed)
-    console.log(`Pre-filtering ${profiles.length} profiles using text matching...`);
+    // Step 2: Precise pre-filtering using industry and role matching
+    console.log(`Pre-filtering ${profiles.length} profiles using precise industry/role matching...`);
     
-    // Create searchable text for each profile
-    const profilesWithText = profiles.map(profile => ({
-      ...profile,
-      searchText: `${profile.name} ${profile.title || ''} ${profile.company || ''} ${profile.location || ''} ${profile.industry || ''} ${profile.summary || ''}`.toLowerCase()
-    }));
-    
-    // Extract keywords from mission for text matching (more inclusive)
-    const missionKeywords = mission.toLowerCase()
+    // Extract specific industry and role keywords from mission
+    const missionTextLower = mission.toLowerCase();
+    const missionKeywords = missionTextLower
       .split(/\s+/)
-      .filter((word: string) => word.length > 2) // Reduced from 3 to 2
-      .filter((word: string) => !['looking', 'find', 'want', 'need', 'seeking', 'searching', 'for', 'the', 'and', 'or', 'in', 'at', 'to', 'with'].includes(word));
+      .filter((word: string) => word.length > 2)
+      .filter((word: string) => !['looking', 'find', 'want', 'need', 'seeking', 'searching', 'for', 'the', 'and', 'or', 'in', 'at', 'to', 'with', 'people', 'professionals', 'experts', 'specialists'].includes(word));
     
-    // Add common tech/industry keywords if not present
-    const commonKeywords = ['engineer', 'developer', 'manager', 'director', 'lead', 'senior', 'tech', 'technology', 'software', 'data', 'ai', 'machine', 'learning', 'startup', 'company', 'business'];
-    const allKeywords = [...missionKeywords, ...commonKeywords.filter(kw => !missionKeywords.includes(kw))];
+    // Industry-specific keyword matching
+    const industryKeywords = {
+      'construction': ['construction', 'contractor', 'contracting', 'building', 'civil', 'engineering', 'infrastructure', 'development', 'project', 'site', 'architect', 'architectural'],
+      'technology': ['software', 'tech', 'technology', 'developer', 'engineer', 'programming', 'coding', 'data', 'ai', 'machine', 'learning', 'startup', 'digital'],
+      'healthcare': ['healthcare', 'medical', 'health', 'doctor', 'nurse', 'hospital', 'clinic', 'pharmaceutical', 'biotech', 'medicine'],
+      'finance': ['finance', 'financial', 'banking', 'investment', 'trading', 'accounting', 'audit', 'risk', 'compliance', 'wealth'],
+      'education': ['education', 'teaching', 'academic', 'university', 'school', 'research', 'professor', 'instructor', 'learning'],
+      'marketing': ['marketing', 'advertising', 'brand', 'digital', 'social', 'content', 'creative', 'design', 'communications'],
+      'sales': ['sales', 'business', 'development', 'account', 'client', 'revenue', 'growth', 'partnership', 'relationship']
+    };
     
-    // Score profiles based on text matching (more generous scoring)
-    const scoredProfiles = profilesWithText.map(profile => {
+    // Determine primary industry from mission
+    let primaryIndustry = null;
+    let industryScore = 0;
+    for (const [industry, keywords] of Object.entries(industryKeywords)) {
+      const matches = keywords.filter(keyword => missionTextLower.includes(keyword)).length;
+      if (matches > industryScore) {
+        industryScore = matches;
+        primaryIndustry = industry;
+      }
+    }
+    
+    console.log(`Detected primary industry: ${primaryIndustry} (score: ${industryScore})`);
+    
+    // Score profiles based on precise industry and role matching
+    const scoredProfiles = profiles.map(profile => {
       let score = 0;
+      let industryMatch = false;
+      let roleMatch = false;
       
-      // Basic keyword matching
-      allKeywords.forEach((keyword: string) => {
-        if (profile.searchText.includes(keyword)) {
-          score += 1;
+      const profileText = `${profile.title || ''} ${profile.company || ''} ${profile.industry || ''} ${profile.summary || ''}`.toLowerCase();
+      
+      // Check for industry match
+      if (primaryIndustry && industryKeywords[primaryIndustry as keyof typeof industryKeywords]) {
+        const industryKeywordsList = industryKeywords[primaryIndustry as keyof typeof industryKeywords];
+        const industryMatches = industryKeywordsList.filter(keyword => profileText.includes(keyword)).length;
+        if (industryMatches > 0) {
+          industryMatch = true;
+          score += industryMatches * 3; // Strong weight for industry match
         }
-      });
-      
-      // Bonus for exact matches in important fields
-      if (profile.title && mission.toLowerCase().includes(profile.title.toLowerCase())) score += 3;
-      if (profile.company && mission.toLowerCase().includes(profile.company.toLowerCase())) score += 3;
-      if (profile.industry && mission.toLowerCase().includes(profile.industry.toLowerCase())) score += 3;
-      
-      // Partial matches in important fields
-      if (profile.title) {
-        allKeywords.forEach(keyword => {
-          if (profile.title!.toLowerCase().includes(keyword)) score += 1;
-        });
-      }
-      if (profile.company) {
-        allKeywords.forEach(keyword => {
-          if (profile.company!.toLowerCase().includes(keyword)) score += 1;
-        });
-      }
-      if (profile.industry) {
-        allKeywords.forEach(keyword => {
-          if (profile.industry!.toLowerCase().includes(keyword)) score += 1;
-        });
       }
       
-      // Give minimum score to all profiles to ensure we have candidates
-      if (score === 0) score = 0.1;
+      // Check for role/title match
+      const roleKeywords = ['contractor', 'manager', 'director', 'lead', 'senior', 'specialist', 'expert', 'consultant', 'freelancer', 'independent'];
+      const roleMatches = roleKeywords.filter(keyword => profileText.includes(keyword)).length;
+      if (roleMatches > 0) {
+        roleMatch = true;
+        score += roleMatches * 2; // Medium weight for role match
+      }
       
-      return { ...profile, textScore: score };
+      // Check for company type match
+      const companyKeywords = ['construction', 'building', 'contracting', 'development', 'engineering', 'infrastructure'];
+      const companyMatches = companyKeywords.filter(keyword => profileText.includes(keyword)).length;
+      if (companyMatches > 0) {
+        score += companyMatches * 2;
+      }
+      
+      // Check for location match (if specified in mission)
+      if (profile.location) {
+        const locationKeywords = missionKeywords.filter(keyword => 
+          profile.location!.toLowerCase().includes(keyword) || keyword.includes(profile.location!.toLowerCase())
+        );
+        if (locationKeywords.length > 0) {
+          score += locationKeywords.length * 1;
+        }
+      }
+      
+      // Only include profiles that have at least some relevance
+      if (score === 0) {
+        return { ...profile, textScore: 0, industryMatch, roleMatch };
+      }
+      
+      return { ...profile, textScore: score, industryMatch, roleMatch };
     });
     
-    // Sort by text score and take top candidates (be more inclusive)
-    const topCandidates = scoredProfiles
+    // Filter out profiles with no relevance and sort by score
+    const relevantProfiles = scoredProfiles.filter(p => p.textScore > 0);
+    const topCandidates = relevantProfiles
       .sort((a, b) => b.textScore - a.textScore)
-      .slice(0, 25); // Process top 25 candidates (increased from 15)
+      .slice(0, 15); // Reduced to 15 for more precision
     
     console.log(`Pre-filtered to ${topCandidates.length} top candidates for embedding generation`);
     console.log(`Top candidates scores:`, topCandidates.slice(0, 10).map(p => ({ name: p.name, score: p.textScore })));
@@ -240,10 +268,26 @@ async function handlePost(request: NextRequest, user: AuthenticatedUser): Promis
       console.log(`Completed embedding generation for ${candidatesToProcess.length} top candidates`);
     }
 
-    // Step 4: Find top matches from candidates with embeddings
+    // Step 4: Check if we have any relevant candidates
+    if (topCandidates.length === 0) {
+      console.log('No relevant profiles found for this mission');
+      return NextResponse.json({
+        success: true,
+        message: 'No relevant profiles found for your search criteria. Try broadening your search or uploading a different connections file.',
+        matches: [],
+        totalProfiles: profiles.length,
+        relevantProfiles: 0,
+        sessionId: sessionId,
+        userId: user.userId
+      });
+    }
+
+    // Step 5: Find top matches from candidates with embeddings
     const candidatesWithEmbeddings = topCandidates.filter(p => p.embedding && p.embedding.length > 0);
     console.log(`Finding matches from ${candidatesWithEmbeddings.length} candidates with embeddings`);
-    const matches = findTopMatches(missionEmbedding, candidatesWithEmbeddings, 6, 0.1); // Reduced threshold from 0.3 to 0.1, increased results to 6
+    
+    // Use stricter similarity threshold for more precise matches
+    const matches = findTopMatches(missionEmbedding, candidatesWithEmbeddings, 6, 0.3); // Increased threshold back to 0.3 for precision
     console.log(`Found ${matches.length} matches`);
 
     if (matches.length === 0) {
@@ -312,7 +356,9 @@ Profile Details:
 - Summary: ${match.summary || 'Not specified'}
 - Similarity Score: ${(match.similarity * 100).toFixed(1)}%
 
-Explain in 2-3 sentences why this profile is a good match for the mission. Focus on specific skills, experience, or background that aligns with the mission.
+IMPORTANT: Only provide a positive match explanation if this profile's industry, role, and experience directly align with the mission. If there is no clear industry or role alignment, explain why this profile is NOT a good match and should be excluded.
+
+Explain in 2-3 sentences why this profile is or is not a good match for the mission. Be specific about industry alignment, role relevance, and experience match.
 `;
 
           const reasoningResponse = await openai.chat.completions.create({
@@ -335,6 +381,18 @@ Explain in 2-3 sentences why this profile is a good match for the mission. Focus
         } catch (error) {
           console.log(`Failed to generate reasoning for ${match.name}:`, error);
           reasoning = 'This profile matches your networking goals based on their professional background and experience.';
+        }
+        
+        // Check if AI identified this as a poor match
+        const isPoorMatch = reasoning.toLowerCase().includes('not a good match') || 
+                           reasoning.toLowerCase().includes('not a strong match') ||
+                           reasoning.toLowerCase().includes('does not align') ||
+                           reasoning.toLowerCase().includes('should be excluded') ||
+                           reasoning.toLowerCase().includes('no clear alignment');
+        
+        if (isPoorMatch) {
+          console.log(`Filtering out poor match: ${match.name} - ${reasoning.substring(0, 100)}...`);
+          return null; // Filter out poor matches
         }
 
         // Enrich with RapidAPI if available
@@ -392,12 +450,28 @@ Explain in 2-3 sentences why this profile is a good match for the mission. Focus
       })
     );
 
+    // Filter out null matches (poor matches that were filtered out)
+    const validMatches = enrichedMatches.filter(match => match !== null);
+    
+    if (validMatches.length === 0) {
+      console.log('No valid matches found after AI filtering');
+      return NextResponse.json({
+        success: true,
+        message: 'No relevant matches found for your search criteria. The profiles in your connections do not align with your mission. Try broadening your search or uploading a different connections file.',
+        matches: [],
+        totalProfiles: profiles.length,
+        relevantProfiles: topCandidates.length,
+        sessionId: sessionId,
+        userId: user.userId
+      });
+    }
+
     // Step 6: Generate AI recommendations
     const recommendationsPrompt = `
 Mission: ${mission}
 
 Top Matches:
-${enrichedMatches.map((profile, index) => `
+${validMatches.map((profile, index) => `
 ${index + 1}. ${profile.name}
    - Title: ${profile.title || 'Not specified'}
    - Company: ${profile.company || 'Not specified'}
@@ -431,7 +505,7 @@ Provide a brief summary (2-3 sentences) highlighting the best matches and next s
     return NextResponse.json({
       success: true,
       message: 'Search completed successfully',
-      matches: enrichedMatches.map(match => ({
+      matches: validMatches.map(match => ({
         id: match.id,
         name: match.name,
         title: match.title,
@@ -452,7 +526,8 @@ Provide a brief summary (2-3 sentences) highlighting the best matches and next s
       totalProfiles: profiles.length,
       processedProfiles: topCandidates.length,
       candidatesWithEmbeddings: candidatesWithEmbeddings.length,
-      processingInfo: `Pre-filtered ${profiles.length} profiles to ${topCandidates.length} candidates, generated embeddings for ${candidatesWithEmbeddings.length} profiles.`,
+      validMatches: validMatches.length,
+      processingInfo: `Pre-filtered ${profiles.length} profiles to ${topCandidates.length} candidates, generated embeddings for ${candidatesWithEmbeddings.length} profiles, found ${validMatches.length} valid matches.`,
       searchTime: Date.now()
     });
 

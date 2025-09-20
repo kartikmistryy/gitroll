@@ -76,3 +76,7 @@
 * {
   font-family: 'sfRegular', sans-serif; 
 }
+
+html, body {
+  scroll-behavior: smooth;
+}

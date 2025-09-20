@@ -9,7 +9,7 @@ export const Navbar = () => {
             </span>
 
             <span className="w-full h-full flex flex-row items-center justify-end md:gap-5 gap-2 md:text-base text-sm font-medium">
-                <Link href="/">How it works</Link>
+                <Link href="#works">How it works</Link>
                 {/* <Link href="/about">About</Link> */}
                 <Link className="bg-[#181818] px-4 py-1.5 text-white rounded-3xl md:text-base text-sm transition-all duration-300 hover:bg-[#2e2e2e] hover:text-[#fff]" href="/dashboard">Login</Link>
             </span>

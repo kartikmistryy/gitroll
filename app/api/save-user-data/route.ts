@@ -1,23 +1,36 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDatabase, UserProfile, UserMatch } from '@/lib/mongodb';
+import { withAuth, AuthenticatedUser } from '@/lib/auth-simple';
+import { validateRequestBody, createValidationErrorResponse, validateEmail } from '@/lib/validation';
 
 /**
  * Save user data to MongoDB
  * This includes profiles and matches for a specific user
  */
-export async function POST(request: NextRequest): Promise<NextResponse> {
+async function handlePost(request: NextRequest, user: AuthenticatedUser): Promise<NextResponse> {
   try {
-    const { email, name, imageUrl, matches, recommendations, mission } = await request.json();
+    // Validate request body
+    const bodyValidation = await validateRequestBody(request);
+    if (!bodyValidation.isValid) {
+      return createValidationErrorResponse(bodyValidation.errors);
+    }
 
-    if (!email) {
-      return NextResponse.json({ error: 'Email is required' }, { status: 400 });
+    const { name, imageUrl, matches, recommendations, mission } = bodyValidation.data;
+
+    // Use authenticated user's email instead of request email for security
+    const userEmail = user.email;
+    
+    // Validate email format
+    const emailValidation = validateEmail(userEmail);
+    if (!emailValidation.isValid) {
+      return createValidationErrorResponse(emailValidation.errors);
     }
 
     const db = await getDatabase();
     const usersCollection = db.collection<UserProfile>('users');
 
     // Check if user already exists
-    const existingUser = await usersCollection.findOne({ email });
+    const existingUser = await usersCollection.findOne({ email: userEmail });
 
     if (existingUser) {
       // Update existing user
@@ -50,7 +63,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       }
 
       await usersCollection.updateOne(
-        { email },
+        { email: userEmail },
         { $set: updateData }
       );
 
@@ -62,8 +75,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     } else {
       // Create new user
       const newUser: UserProfile = {
-        email,
-        name,
+        email: userEmail,
+        name: name || user.email.split('@')[0],
         imageUrl,
         matches: [],
         createdAt: new Date(),
@@ -87,13 +100,18 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       return NextResponse.json({ 
         success: true, 
         message: 'User data saved successfully',
-        userId: result.insertedId 
+        userId: result.insertedId,
+        userEmail: userEmail
       });
     }
-  } catch (error) {
+  } catch (err) {
+    console.error('Error saving user data:', err);
     return NextResponse.json(
       { error: 'Failed to save user data' },
       { status: 500 }
     );
   }
 }
+
+// Export the authenticated handler
+export const POST = withAuth(handlePost);

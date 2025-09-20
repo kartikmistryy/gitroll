@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
+import { withAuth, AuthenticatedUser } from '@/lib/auth-simple';
+import { validateMissionStatement, createValidationErrorResponse, validateRequestBody } from '@/lib/validation';
 
 /**
  * Mission Statement Parser API
@@ -13,13 +15,20 @@ import OpenAI from 'openai';
  * @param request - Contains mission statement in JSON body
  * @returns Structured attributes extracted from the mission
  */
-export async function POST(request: NextRequest): Promise<NextResponse> {
+async function handlePost(request: NextRequest, user: AuthenticatedUser): Promise<NextResponse> {
   try {
-    const { mission } = await request.json();
+    // Validate request body
+    const bodyValidation = await validateRequestBody(request);
+    if (!bodyValidation.isValid) {
+      return createValidationErrorResponse(bodyValidation.errors);
+    }
 
-    // Validate input
-    if (!mission || mission.trim().length === 0) {
-      return NextResponse.json({ error: 'Mission statement is required' }, { status: 400 });
+    const { mission } = bodyValidation.data;
+
+    // Validate mission statement
+    const missionValidation = validateMissionStatement(mission);
+    if (!missionValidation.isValid) {
+      return createValidationErrorResponse(missionValidation.errors);
     }
 
     // Validate Azure OpenAI configuration
@@ -111,7 +120,8 @@ CRITICAL: Return ONLY the JSON object. No explanations, no markdown, no addition
     return NextResponse.json({
       success: true,
       attributes,
-      originalMission: mission
+      originalMission: mission,
+      userId: user.userId
     });
 
   } catch (error: unknown) {
@@ -122,3 +132,6 @@ CRITICAL: Return ONLY the JSON object. No explanations, no markdown, no addition
     }, { status: 500 });
   }
 }
+
+// Export the authenticated handler
+export const POST = withAuth(handlePost);

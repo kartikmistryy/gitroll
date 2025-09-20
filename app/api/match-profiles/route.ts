@@ -1,5 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
+import { withAuth, AuthenticatedUser } from '@/lib/auth-simple';
+import { 
+  validateMissionStatement, 
+  validateSessionId, 
+  createValidationErrorResponse,
+  validateRequestBody 
+} from '@/lib/validation';
 import { 
   getProfilesBySession, 
   saveProfiles,
@@ -19,15 +26,15 @@ import {
  * 
  * Process:
  * 1. Generate embedding for mission statement
- * 2. Generate embeddings for all profiles (if not cached)
+ * 2. Generate embeddings for all profiles (if not cached) with progress saving
  * 3. Calculate cosine similarity between mission and profiles
  * 4. Find top 5 most similar profiles
  * 5. Generate AI-powered recommendations
  * 
- * @param request - Contains mission statement and parsed attributes
+ * @param request - Contains mission statement, parsed attributes, and sessionId
  * @returns Top matches and intelligent recommendations
  */
-export async function POST(request: NextRequest): Promise<NextResponse> {
+async function handlePost(request: NextRequest, user: AuthenticatedUser): Promise<NextResponse> {
   // Set a timeout for the entire operation (4 minutes for Vercel compatibility)
   const timeoutPromise = new Promise<never>((_, reject) => {
     setTimeout(() => reject(new Error('Request timeout')), 240000);
@@ -35,18 +42,53 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   const processPromise = (async (): Promise<NextResponse> => {
     try {
-      const { mission, attributes, sessionId } = await request.json();
-      
+      // Validate request body
+      const bodyValidation = await validateRequestBody(request);
+      if (!bodyValidation.isValid) {
+        return createValidationErrorResponse(bodyValidation.errors);
+      }
 
-    // Validate required inputs
-    if (!mission || !attributes || !sessionId) {
-      return NextResponse.json({ 
-        error: 'Mission, attributes, and sessionId are required' 
-      }, { status: 400 });
-    }
+      const { mission, attributes, sessionId } = bodyValidation.data;
 
-    // Get profiles from the specific upload session
-    const profiles = await getProfilesBySession(sessionId);
+      console.log('Received sessionId:', sessionId, 'Type:', typeof sessionId);
+
+      // Validate required inputs
+      if (!mission || !attributes || !sessionId) {
+        return NextResponse.json({ 
+          error: 'Mission, attributes, and sessionId are required' 
+        }, { status: 400 });
+      }
+
+      // Validate mission statement
+      const missionValidation = validateMissionStatement(mission);
+      if (!missionValidation.isValid) {
+        return createValidationErrorResponse(missionValidation.errors);
+      }
+
+      // Validate session ID
+      if (!sessionId) {
+        return NextResponse.json({
+          error: 'Session ID is required',
+          message: 'Please upload a CSV file first to get a session ID'
+        }, { status: 400 });
+      }
+
+      const sessionValidation = validateSessionId(sessionId);
+      if (!sessionValidation.isValid) {
+        console.log('Session validation failed:', sessionValidation.errors);
+        return createValidationErrorResponse(sessionValidation.errors);
+      }
+
+      // Verify the session belongs to the authenticated user
+      if (!sessionId.startsWith(`upload-${user.userId}-`) && !sessionId.startsWith(`user-${user.userId}-`)) {
+        return NextResponse.json({
+          error: 'Unauthorized',
+          message: 'You can only match profiles from your own uploads'
+        }, { status: 403 });
+      }
+
+    // Get profiles from the specific upload session with user isolation
+    const profiles = await getProfilesBySession(sessionId, user.userId);
     console.log(`Processing ${profiles.length} profiles from session: ${sessionId}`);
     
     if (profiles.length === 0) {
@@ -87,13 +129,25 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     console.log(`Profiles with embeddings: ${profiles.filter(p => p.embedding && p.embedding.length > 0).length}`);
     console.log(`Profiles needing embeddings: ${profilesToProcess.length}`);
     
-    if (profilesToProcess.length > 0) {
-      console.log(`Processing embeddings for ${profilesToProcess.length} profiles...`);
+    // For very large datasets, limit processing to prevent timeouts
+    const maxProfilesToProcess = 200; // Limit to prevent timeout
+    const limitedProfilesToProcess = profilesToProcess.slice(0, maxProfilesToProcess);
+    
+    if (profilesToProcess.length > maxProfilesToProcess) {
+      console.log(`Large dataset detected (${profilesToProcess.length} profiles). Processing first ${maxProfilesToProcess} profiles to prevent timeout.`);
+    }
+    
+    if (limitedProfilesToProcess.length > 0) {
+      console.log(`Processing embeddings for ${limitedProfilesToProcess.length} profiles...`);
       
       // Process embeddings in batches for better performance and reliability
-      const batchSize = 10; // Smaller batch size for faster processing
-      for (let i = 0; i < profilesToProcess.length; i += batchSize) {
-        const batch = profilesToProcess.slice(i, i + batchSize);
+      const batchSize = 5; // Smaller batch size for faster processing and better timeout handling
+      let processedCount = 0;
+      let failedBatches = 0;
+      const maxFailedBatches = 3; // Allow some failures but not too many
+      
+      for (let i = 0; i < limitedProfilesToProcess.length; i += batchSize) {
+        const batch = limitedProfilesToProcess.slice(i, i + batchSize);
         
         try {
           // Generate all profile texts first
@@ -115,18 +169,29 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             profile.embedding = batchEmbeddingResponse.data[index].embedding;
           });
           
-          console.log(`Processed batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(profilesToProcess.length / batchSize)}`);
+          processedCount += batch.length;
+          console.log(`Processed batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(limitedProfilesToProcess.length / batchSize)} (${processedCount}/${limitedProfilesToProcess.length} profiles)`);
+          
+          // Save progress after each batch to prevent data loss on timeout
+          await saveProfiles(profiles, user.userId);
+          console.log(`Progress saved: ${processedCount}/${limitedProfilesToProcess.length} profiles processed`);
           
         } catch (error) {
           console.error(`Failed to process batch starting at index ${i}:`, error);
+          failedBatches++;
+          
+          // If too many batches fail, stop processing
+          if (failedBatches >= maxFailedBatches) {
+            console.error(`Too many failed batches (${failedBatches}), stopping processing`);
+            break;
+          }
+          
           // Continue with next batch instead of failing completely
           continue;
         }
       }
       
-      // Save profiles with their new embeddings back to storage
-      await saveProfiles(profiles);
-      console.log(`Embeddings saved to storage for ${profilesToProcess.length} profiles`);
+      console.log(`Embeddings processing completed for ${processedCount} profiles`);
     }
 
     // Step 3: Find top matches using cosine similarity with minimum threshold
@@ -256,7 +321,12 @@ Keep it concise and professional.
         reasoning: match.reasoning
       })),
       recommendations,
-      totalProfiles: profiles.length
+      totalProfiles: profiles.length,
+      processedProfiles: limitedProfilesToProcess.length,
+      skippedProfiles: profilesToProcess.length > maxProfilesToProcess ? profilesToProcess.length - maxProfilesToProcess : 0,
+      processingInfo: profilesToProcess.length > maxProfilesToProcess ? 
+        `Processed first ${maxProfilesToProcess} profiles to prevent timeout. ${profilesToProcess.length - maxProfilesToProcess} profiles skipped.` : 
+        'All profiles processed successfully.'
     });
 
     } catch (error: unknown) {
@@ -286,3 +356,6 @@ Keep it concise and professional.
     throw error; // Re-throw other errors
   }
 }
+
+// Export the authenticated handler
+export const POST = withAuth(handlePost);

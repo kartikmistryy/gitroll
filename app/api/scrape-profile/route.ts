@@ -1,20 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
 import axios, { AxiosError } from 'axios';
+import { withAuth, AuthenticatedUser, generateUserSessionId } from '@/lib/auth-simple';
+import { validateLinkedInUrl, createValidationErrorResponse, validateRequestBody } from '@/lib/validation';
 import { convertRapidAPIProfile, addProfile } from '@/lib/utils';
 
-export async function POST(request: NextRequest): Promise<NextResponse> {
+async function handlePost(request: NextRequest, user: AuthenticatedUser): Promise<NextResponse> {
   try {
-    const { url } = await request.json();
-
-    if (!url) {
-      return NextResponse.json({ error: 'URL is required' }, { status: 400 });
+    // Validate request body
+    const bodyValidation = await validateRequestBody(request);
+    if (!bodyValidation.isValid) {
+      return createValidationErrorResponse(bodyValidation.errors);
     }
 
+    const { url } = bodyValidation.data;
+
     // Validate LinkedIn URL
-    if (!url.includes('linkedin.com/in/')) {
-      return NextResponse.json({ 
-        error: 'Please provide a valid LinkedIn profile URL' 
-      }, { status: 400 });
+    const urlValidation = validateLinkedInUrl(url);
+    if (!urlValidation.isValid) {
+      return createValidationErrorResponse(urlValidation.errors);
     }
 
     const rapidApiKey = process.env.RAPIDAPI_KEY;
@@ -44,21 +47,33 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       }, { status: 400 });
     }
 
-    // Convert to Profile object
+    // Convert to Profile object with user session ID
     const profile = convertRapidAPIProfile(response.data, url);
+    profile.uploadSessionId = generateUserSessionId(user, 'scrape');
     
     console.log(`Scraped profile for ${profile.name}:`);
     console.log(`- Profile picture: ${profile.profilePicture ? 'Found' : 'Not found'}`);
     console.log(`- Email: ${profile.email ? 'Found' : 'Not found'}`);
     console.log(`- Skills: ${profile.skills?.length || 0} skills found`);
 
-    // Store in MongoDB
-    await addProfile(profile);
+    // Store in MongoDB with user isolation
+    await addProfile(profile, user.userId);
 
     return NextResponse.json({
       success: true,
       message: 'Profile scraped successfully',
-      profile
+      profile: {
+        id: profile.id,
+        name: profile.name,
+        title: profile.title,
+        company: profile.company,
+        location: profile.location,
+        industry: profile.industry,
+        linkedinUrl: profile.linkedinUrl,
+        summary: profile.summary,
+        uploadSessionId: profile.uploadSessionId
+      },
+      userId: user.userId
     });
   } catch (error: unknown) {
     if ((error as AxiosError).response?.status === 429) {
@@ -79,3 +94,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }, { status: 500 });
   }
 }
+
+// Export the authenticated handler
+export const POST = withAuth(handlePost);

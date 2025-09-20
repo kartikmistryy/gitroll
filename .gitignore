@@ -42,3 +42,6 @@ next-env.d.ts
 
 # data files (large profile data with embeddings)
 /data/profiles.json
+
+# clerk configuration (can include secrets)
+/.clerk/

@@ -1,7 +1,7 @@
 // Import persistent storage functions
 import { addProfile, addProfiles, getAllProfiles, clearProfiles, saveProfiles, getProfilesBySession, clearProfilesBySession } from './storage';
 
-// Re-export storage functions (now async)
+// Re-export storage functions (now async with user isolation)
 export { addProfile, addProfiles, getAllProfiles, clearProfiles, saveProfiles, getProfilesBySession, clearProfilesBySession };
 
 /**
@@ -59,6 +59,11 @@ export interface MatchResult {
   industry?: string;
   linkedinUrl?: string;
   summary?: string;
+  profilePicture?: string;
+  email?: string;
+  skills?: string[];
+  experience?: string;
+  education?: string;
   similarity: number;
   reasoning?: string;
 }
@@ -206,6 +211,25 @@ export const parseLinkedInCSV = (csvData: Record<string, string>[], sessionId?: 
     const industry = row["Industry"] || row["industry"] || row["Sector"] || row["sector"] || "";
     const linkedinUrl = row["URL"] || row["LinkedIn URL"] || row["Profile URL"] || row["url"] || row["linkedin_url"] || "";
     const email = row["Email Address"] || row["email"] || row["Email"] || "";
+    
+    // Extract additional fields that might be available
+    const summary = row["Summary"] || row["summary"] || row["About"] || row["about"] || "";
+    const experience = row["Experience"] || row["experience"] || row["Work Experience"] || row["work_experience"] || "";
+    const education = row["Education"] || row["education"] || row["School"] || row["school"] || "";
+    const skills = row["Skills"] || row["skills"] || row["Endorsements"] || row["endorsements"] || "";
+    
+    // Parse skills from string to array
+    const skillsArray = skills ? skills.split(',').map(skill => skill.trim()).filter(skill => skill.length > 0) : [];
+    
+    // Create a more comprehensive summary
+    const enhancedSummary = summary || 
+      (jobTitle && company ? `${jobTitle} at ${company}` : 
+       jobTitle || company || `${firstName} ${lastName}`.trim());
+    
+    // Create experience description
+    const experienceText = experience || 
+      (jobTitle && company ? `${jobTitle} at ${company}` : 
+       jobTitle || company || "");
 
     return {
       id: `csv-${index}-${Date.now()}`,
@@ -216,10 +240,11 @@ export const parseLinkedInCSV = (csvData: Record<string, string>[], sessionId?: 
       industry: industry,
       linkedinUrl: linkedinUrl,
       email: email,
-      summary: `${jobTitle} at ${company}`,
-      experience: `${jobTitle} at ${company}`,
-      education: "",
-      skills: [],
+      summary: enhancedSummary,
+      experience: experienceText,
+      education: education,
+      skills: skillsArray,
+      profilePicture: "", // Will be populated if we scrape the profile
       uploadSessionId: sessionId
     };
   });

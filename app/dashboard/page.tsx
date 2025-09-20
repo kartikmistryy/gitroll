@@ -10,7 +10,11 @@ import {
   FiUsers, 
   FiCheck, 
   FiAlertCircle,
-  FiLogOut
+  FiLogOut,
+  FiClock,
+  FiTarget,
+  FiRefreshCw,
+  FiPlus
 } from "react-icons/fi";
 import { useUser, UserButton, useClerk } from '@clerk/nextjs';
 import { useRouter } from 'next/navigation';
@@ -40,6 +44,14 @@ interface Match {
   reasoning?: string;
 }
 
+interface SavedMatch {
+  id: string;
+  mission: string;
+  matches: Match[];
+  recommendations: string;
+  createdAt: string;
+}
+
 /**
  * LinkedIn Network Analysis Dashboard
  * 
@@ -66,6 +78,10 @@ export default function Dashboard() {
   const [uploadStatus, setUploadStatus] = useState<UploadStatus | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+  const [savedMatches, setSavedMatches] = useState<SavedMatch[]>([]);
+  const [isLoadingSavedMatches, setIsLoadingSavedMatches] = useState(false);
+  const [isUpdateMode, setIsUpdateMode] = useState(false);
+  const [updatingMatchId, setUpdatingMatchId] = useState<string | null>(null);
   
   // Refs
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -97,6 +113,69 @@ export default function Dashboard() {
     };
   }, [sidebarOpen]);
 
+  /**
+   * Load saved matches from MongoDB
+   */
+  const loadSavedMatches = async (): Promise<void> => {
+    if (!user?.primaryEmailAddress?.emailAddress) return;
+
+    setIsLoadingSavedMatches(true);
+    try {
+      const response = await fetch('/api/load-user-data');
+      
+      if (response.ok) {
+        const data = await response.json();
+        
+        if (data.success) {
+          const matches = data.data?.matches || [];
+          setSavedMatches(matches);
+        }
+      } else {
+        console.error('Failed to load saved matches:', response.status, response.statusText);
+        setSavedMatches([]);
+      }
+    } catch (error) {
+      console.error('Failed to load saved matches:', error);
+      setSavedMatches([]);
+    } finally {
+      setIsLoadingSavedMatches(false);
+    }
+  };
+
+  /**
+   * Clear the dashboard for a fresh start
+   */
+  const clearDashboard = (): void => {
+    setMission("");
+    setMatches([]);
+    setRecommendations("");
+    setTotalProfiles(0);
+    setCurrentSessionId(null);
+    setUploadStatus(null);
+    setIsUpdateMode(false);
+    setUpdatingMatchId(null);
+    // Reset file input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+
+  /**
+   * Load a specific saved match back into the dashboard
+   */
+  const loadSavedMatch = (savedMatch: SavedMatch): void => {
+    setMission(savedMatch.mission);
+    setMatches(savedMatch.matches);
+    setRecommendations(savedMatch.recommendations);
+    setTotalProfiles(savedMatch.matches.length);
+    setIsUpdateMode(true);
+    setUpdatingMatchId(savedMatch.id);
+    setUploadStatus({ 
+      type: 'success', 
+      message: `Loaded ${savedMatch.matches.length} profiles from ${new Date(savedMatch.createdAt).toLocaleDateString()}. You can now search with a new mission.` 
+    });
+  };
+
   // Redirect unauthenticated users and load user data
   useEffect(() => {
     if (isLoaded && !user) {
@@ -104,18 +183,32 @@ export default function Dashboard() {
     } else if (isLoaded && user) {
       const loadUserData = async () => {
         try {
-          const response = await fetch(`/api/load-user-data?email=${encodeURIComponent(user.primaryEmailAddress?.emailAddress || '')}`);
+          const response = await fetch('/api/load-user-data');
+          
           if (response.ok) {
             const data = await response.json();
-            if (data.success && data.data?.matches?.length > 0) {
-              const latestMatch = data.data.matches[data.data.matches.length - 1];
-              setMatches(latestMatch.matches || []);
-              setRecommendations(latestMatch.recommendations || '');
-              setMission(latestMatch.mission || '');
+            
+            if (data.success) {
+              // Always set saved matches, even if empty
+              const matches = data.data?.matches || [];
+              setSavedMatches(matches);
+              
+              // Only load the latest match if there are matches
+              if (matches.length > 0) {
+                const latestMatch = matches[matches.length - 1];
+                setMatches(latestMatch.matches || []);
+                setRecommendations(latestMatch.recommendations || '');
+                setMission(latestMatch.mission || '');
+              }
             }
+          } else {
+            console.error('Failed to load user data:', response.status, response.statusText);
+            setSavedMatches([]);
           }
-        } catch {
-          // Silently handle error - user can still use the app
+        } catch (error) {
+          console.error('Failed to load user data:', error);
+          // Set empty array on error to show proper empty state
+          setSavedMatches([]);
         }
       };
       loadUserData();
@@ -137,7 +230,6 @@ export default function Dashboard() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          email: user.primaryEmailAddress.emailAddress,
           name: user.fullName,
           imageUrl: user.imageUrl,
           matches,
@@ -147,11 +239,21 @@ export default function Dashboard() {
       });
 
       const result = await response.json();
-      if (!result.success) {
-        // Silently handle error - matches will still be displayed
+      
+      if (result.success) {
+        // Refresh saved matches list after successful save
+        await loadSavedMatches();
+        
+        // If in update mode, exit update mode after successful save
+        if (isUpdateMode) {
+          setIsUpdateMode(false);
+          setUpdatingMatchId(null);
+        }
+      } else {
+        console.error('Failed to save matches:', result.error);
       }
-    } catch {
-      // Silently handle error - matches will still be displayed
+    } catch (error) {
+      console.error('Error saving matches:', error);
     } finally {
       setIsSaving(false);
     }
@@ -236,6 +338,10 @@ export default function Dashboard() {
     try {
       const response = await fetch('/api/clear-profiles', {
         method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ sessionId: currentSessionId }),
       });
 
       const result = await response.json();
@@ -247,6 +353,8 @@ export default function Dashboard() {
         });
         setTotalProfiles(0);
         setCurrentSessionId(null);
+        setMatches([]);
+        setRecommendations('');
       } else {
         setUploadStatus({ type: 'error', message: result.error || 'Failed to clear profiles' });
       }
@@ -300,73 +408,31 @@ export default function Dashboard() {
       }
 
       // Step 2: Find matches using vector similarity
-      const matchesResponse = await fetch('/api/match-profiles', {
+      const matchesResponse = await fetch('/api/search-profiles', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ 
           mission, 
-          attributes: missionResult.attributes,
-          sessionId: currentSessionId
+          sessionId: currentSessionId,
+          attributes: missionResult.attributes
         }),
       });
 
       const matchesResult = await matchesResponse.json();
 
       if (matchesResult.success) {
-        // Auto-scrape LinkedIn profiles for the matches
-        const enrichedMatches = await Promise.all(
-          matchesResult.matches.map(async (match: Match) => {
-            if (match.linkedinUrl) {
-              try {
-                console.log(`Scraping profile for ${match.name}: ${match.linkedinUrl}`);
-                const scrapeResponse = await fetch('/api/scrape-profile', {
-                  method: 'POST',
-                  headers: {
-                    'Content-Type': 'application/json',
-                  },
-                  body: JSON.stringify({ url: match.linkedinUrl }),
-                });
-                
-                const scrapeResult = await scrapeResponse.json();
-                if (scrapeResult.success && scrapeResult.profile) {
-                  console.log(`Successfully scraped ${match.name}, profile picture: ${scrapeResult.profile.profilePicture ? 'Found' : 'Not found'}`);
-                  return {
-                    ...match,
-                    profilePicture: scrapeResult.profile.profilePicture || `https://ui-avatars.com/api/?name=${encodeURIComponent(match.name)}&background=random&color=fff&size=200`,
-                    email: scrapeResult.profile.email,
-                    experience: scrapeResult.profile.experience,
-                    education: scrapeResult.profile.education,
-                    skills: scrapeResult.profile.skills,
-                    title: scrapeResult.profile.title || match.title,
-                    summary: scrapeResult.profile.summary || match.summary
-                  };
-                } else {
-                  console.log(`Failed to scrape ${match.name}: ${scrapeResult.error || 'Unknown error'}`);
-                }
-              } catch (error) {
-                console.log(`Error scraping ${match.name}:`, error);
-              }
-            }
-            
-            // Return match with fallback profile picture
-            return {
-              ...match,
-              profilePicture: match.profilePicture || `https://ui-avatars.com/api/?name=${encodeURIComponent(match.name)}&background=random&color=fff&size=200`
-            };
-          })
-        );
-        
-        setMatches(enrichedMatches);
+        // The search-profiles API already handles enrichment
+        setMatches(matchesResult.matches);
         setRecommendations(matchesResult.recommendations);
         setUploadStatus({ 
           type: 'success', 
-          message: `Found ${matchesResult.matches.length} high-quality matches with detailed reasoning` 
+          message: `Found ${matchesResult.matches.length} high-quality matches` 
         });
         
         // Save matches to MongoDB
-        await saveUserMatches(enrichedMatches, matchesResult.recommendations, mission);
+        await saveUserMatches(matchesResult.matches, matchesResult.recommendations, mission);
       } else {
         setUploadStatus({ type: 'error', message: matchesResult.error || 'Failed to find matches' });
       }
@@ -439,9 +505,20 @@ export default function Dashboard() {
                   </div>
                 </div>
 
+                {/* New Search Button */}
+                <div className="mb-6">
+                  <button
+                    onClick={clearDashboard}
+                    className="w-full flex items-center justify-center px-4 py-3 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors mb-3"
+                  >
+                    <FiPlus className="mr-2" />
+                    New Search
+                  </button>
+                </div>
+
                 {/* File Upload Section */}
                 <div className="mb-6">
-                  <h3 className="text-sm font-medium text-gray-700 mb-3">Data Import</h3>
+                  <h3 className="text-sm font-medium text-gray-700 mb-3">Import Connections data</h3>
                   
                   <div className="space-y-3">
                     <div className="flex gap-2">
@@ -509,6 +586,79 @@ export default function Dashboard() {
                   </div>
                 )}
 
+                {/* Saved Matches Section */}
+                <div className="mt-6">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-sm font-medium text-gray-700">Saved Matches</h3>
+                    <button
+                      onClick={loadSavedMatches}
+                      disabled={isLoadingSavedMatches}
+                      className="p-1 text-gray-500 hover:text-gray-700 transition-colors disabled:opacity-50"
+                      title="Refresh saved matches"
+                    >
+                      <FiRefreshCw className={`w-4 h-4 ${isLoadingSavedMatches ? 'animate-spin' : ''}`} />
+                    </button>
+                  </div>
+                  
+                  
+                  {isLoadingSavedMatches ? (
+                    <div className="flex items-center justify-center py-4">
+                      <div className="w-4 h-4 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin"></div>
+                    </div>
+                  ) : savedMatches.length > 0 ? (
+                    <div className="space-y-2 max-h-64 overflow-y-auto">
+                      {savedMatches.map((savedMatch) => (
+                        <button
+                          key={savedMatch.id}
+                          onClick={() => loadSavedMatch(savedMatch)}
+                          className={`w-full text-left p-3 rounded-lg transition-colors ${
+                            isUpdateMode && updatingMatchId === savedMatch.id
+                              ? 'bg-blue-50 border-2 border-blue-300'
+                              : 'bg-white border border-gray-200 hover:bg-gray-50 hover:border-gray-300'
+                          }`}
+                        >
+                          <div className="flex items-start space-x-2">
+                            <FiTarget className={`w-4 h-4 mt-0.5 flex-shrink-0 ${
+                              isUpdateMode && updatingMatchId === savedMatch.id
+                                ? 'text-blue-600'
+                                : 'text-blue-500'
+                            }`} />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-gray-900 truncate">
+                                {savedMatch.mission.length > 50 
+                                  ? `${savedMatch.mission.substring(0, 50)}...` 
+                                  : savedMatch.mission
+                                }
+                              </p>
+                              <div className="flex items-center space-x-2 mt-1">
+                                <span className="text-xs text-gray-500">
+                                  {savedMatch.matches.length} matches
+                                </span>
+                                <span className="text-xs text-gray-400">•</span>
+                                <span className="text-xs text-gray-500 flex items-center">
+                                  <FiClock className="w-3 h-3 mr-1" />
+                                  {new Date(savedMatch.createdAt).toLocaleDateString()}
+                                </span>
+                                {isUpdateMode && updatingMatchId === savedMatch.id && (
+                                  <span className="text-xs text-blue-600 font-medium">
+                                    • Active
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-4">
+                      <FiTarget className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+                      <p className="text-sm text-gray-500">No saved matches yet</p>
+                      <p className="text-xs text-gray-400 mt-1">Your matches will appear here</p>
+                    </div>
+                  )}
+                </div>
+
                 {/* Logout Button */}
                 <div className="mt-auto pt-6">
                   <button
@@ -539,9 +689,21 @@ export default function Dashboard() {
 
             {/* Mission Input Section */}
             <div className="rounded-lg mb-5">
-              <p className="text-gray-600 mb-4">
-                Describe your networking goals. Our AI will analyze your mission and find the most relevant connections.
-              </p>
+              {isUpdateMode ? (
+                <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                  <div className="flex items-center space-x-2 mb-2">
+                    <FiTarget className="w-4 h-4 text-blue-600" />
+                    <span className="text-sm font-medium text-blue-900">Update Mode</span>
+                  </div>
+                  <p className="text-sm text-blue-800">
+                    You&apos;re updating an existing search. Enter a new mission to find different matches from the same profiles.
+                  </p>
+                </div>
+              ) : (
+                <p className="text-gray-600 mb-4">
+                  Describe your networking goals. Our AI will analyze your mission and find the most relevant connections.
+                </p>
+              )}
               <textarea
                 value={mission}
                 onChange={(e) => setMission(e.target.value)}
@@ -552,17 +714,19 @@ export default function Dashboard() {
                 <button
                   onClick={handleFindMatches}
                   disabled={isLoading || !mission.trim() || totalProfiles === 0}
-                  className="px-6 py-3 bg-gray-800 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
+                  className={`px-6 py-3 text-white rounded-lg hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2 ${
+                    isUpdateMode ? 'bg-blue-600 hover:bg-blue-700' : 'bg-gray-800 hover:bg-gray-700'
+                  }`}
                 >
                   {isLoading ? (
                     <>
                       <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      <span>Finding Matches...</span>
+                      <span>{isUpdateMode ? 'Updating Matches...' : 'Finding Matches...'}</span>
                       <span className="text-xs opacity-75 ml-2">(AI analyzing {totalProfiles} profiles)</span>
                     </>
                   ) : (
                     <>
-                      <span>Find Matches</span>
+                      <span>{isUpdateMode ? 'Update Matches' : 'Find Matches'}</span>
                     </>
                   )}
                 </button>
@@ -620,11 +784,44 @@ export default function Dashboard() {
                             <p className="text-gray-900 text-sm font-semibold">{match.company}</p>
                             <p className="text-gray-500 text-xs mt-1">{match.location}  {match.industry}</p>
                             
-                            {/* Reasoning */}
+                            {/* Skills */}
+                            {match.skills && match.skills.length > 0 && (
+                              <div className="mt-2">
+                                <div className="flex flex-wrap gap-1">
+                                  {match.skills.slice(0, 5).map((skill, skillIndex) => {
+                                    const skillName = typeof skill === 'string' ? skill : skill.name || skill.skill || 'Unknown';
+                                    return (
+                                      <span
+                                        key={skillIndex}
+                                        className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full"
+                                      >
+                                        {skillName}
+                                      </span>
+                                    );
+                                  })}
+                                  {match.skills.length > 5 && (
+                                    <span className="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded-full">
+                                      +{match.skills.length - 5} more
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                            
+                            {/* AI Reasoning */}
                             {match.reasoning && (
-                              <div className="mt-3 p-3 bg-blue-50 rounded-lg border-l-4 border-blue-400">
-                                <p className="text-sm text-blue-800 font-medium mb-1">Why this match:</p>
-                                <p className="text-sm text-blue-700">{match.reasoning}</p>
+                              <div className="mt-3 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border-l-4 border-blue-500 shadow-sm">
+                                <div className="flex items-start space-x-2">
+                                  <div className="flex-shrink-0">
+                                    <div className="w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center">
+                                      <span className="text-white text-xs font-bold">AI</span>
+                                    </div>
+                                  </div>
+                                  <div className="flex-1">
+                                    <p className="text-sm font-semibold text-blue-900 mb-1">Why this match:</p>
+                                    <p className="text-sm text-blue-800 leading-relaxed">{match.reasoning}</p>
+                                  </div>
+                                </div>
                               </div>
                             )}
                           </div>

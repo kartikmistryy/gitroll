@@ -1,17 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDatabase, UserProfile } from '@/lib/mongodb';
+import { withAuth, AuthenticatedUser } from '@/lib/auth-simple';
 
 /**
  * Load user data from MongoDB
  * Returns user's profiles and match history
  */
-export async function GET(request: NextRequest): Promise<NextResponse> {
+async function handleGet(request: NextRequest, user: AuthenticatedUser): Promise<NextResponse> {
   try {
-    const { searchParams } = new URL(request.url);
-    const email = searchParams.get('email');
-
-    if (!email) {
-      return NextResponse.json({ error: 'Email is required' }, { status: 400 });
+    // Use authenticated user's email for security
+    const userEmail = user?.email;
+    
+    if (!userEmail) {
+      return NextResponse.json({
+        error: 'User email not available',
+        message: 'Authentication failed'
+      }, { status: 401 });
     }
 
     // Check if MongoDB URI is configured
@@ -26,9 +30,9 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     const db = await getDatabase();
     const usersCollection = db.collection<UserProfile>('users');
 
-    const user = await usersCollection.findOne({ email });
+    const userDoc = await usersCollection.findOne({ email: userEmail });
 
-    if (!user) {
+    if (!userDoc) {
       return NextResponse.json({ 
         success: true, 
         data: {
@@ -40,13 +44,14 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ 
       success: true, 
       data: {
-        matches: user.matches || [],
+        matches: userDoc.matches || [],
         user: {
-          name: user.name,
-          imageUrl: user.imageUrl,
-          email: user.email
+          name: userDoc.name,
+          imageUrl: userDoc.imageUrl,
+          email: userDoc.email
         }
-      }
+      },
+      userId: userDoc._id
     });
   } catch (error) {
     console.error('Error in load-user-data API:', error);
@@ -60,3 +65,6 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     );
   }
 }
+
+// Export the authenticated handler with rate limiting
+export const GET = withAuth(handleGet);

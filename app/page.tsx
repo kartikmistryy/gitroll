@@ -240,7 +240,7 @@ export default function Home() {
       </section>
 
       {/* How It Works Section */}
-      <section className="w-full h-full flex flex-col justify-start items-center max-w-6xl mx-auto md:py-20 py-10">
+      <section id="works" className="w-full h-full flex flex-col justify-start items-center max-w-6xl mx-auto md:py-20 py-10">
         <motion.div
           className="w-full h-full flex flex-col justify-center items-center md:pt-0 pt-5"
           initial={{ opacity: 0, y: 20 }}
